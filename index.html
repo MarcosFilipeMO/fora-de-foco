@@ -38,7 +38,9 @@ button:hover{border-color:var(--red)}
 :focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .presets button{font-weight:400}
-.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:22px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-top:22px}
+.hint{font-size:13px;color:var(--muted);margin:0 0 10px}
+@media(max-width:1150px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 fieldset{border:1px solid var(--line);border-radius:6px;padding:14px 16px 6px;margin:0;background:var(--panel)}
 legend{font:400 20px Anton,sans-serif;padding:0 6px;letter-spacing:.02em}
 label{display:block;margin-bottom:12px;font-size:14px;color:var(--muted)}
@@ -59,13 +61,14 @@ footer{color:var(--muted);font-size:14px}
 <body>
 <header class="band"><div class="wrap">
   <h1>Fora de <span>foco</span></h1>
-  <p>Escreva, desfoque e granule. A letra se dissolve como numa fotocópia gasta. Exporta em PNG, com fundo ou transparente.</p>
+  <p>Escreva, desfoque e granule. A letra se dissolve como numa fotocópia gasta. Exporta em PNG ou em SVG vetorial, com fundo ou transparente.</p>
 </div></header>
 
 <main class="band" style="padding-top:0"><div class="wrap">
   <div class="stage"><canvas id="out" width="1800" height="600" aria-label="Prévia do texto gerado"></canvas></div>
   <div class="bar">
     <button class="main" id="dl">Baixar PNG</button>
+    <button class="main" id="dlsvg">Baixar SVG</button>
     <button id="copy">Copiar imagem</button>
     <button id="seed">Novo grão</button>
     <span class="note" id="status"></span>
@@ -105,6 +108,16 @@ footer{color:var(--muted);font-size:14px}
       <div class="row"><input type="color" id="fg" value="#f2ece4" aria-label="Cor do texto">Texto
         <input type="color" id="bg" value="#1a0c0b" aria-label="Cor do fundo">Fundo</div>
       <div class="check"><input type="checkbox" id="transp"><label for="transp" style="margin:0">Fundo transparente</label></div>
+    </fieldset>
+
+    <fieldset><legend>Vetor (SVG)</legend>
+      <label for="vdetail">Detalhe</label>
+      <select id="vdetail"><option value="1">Máximo (arquivo pesado)</option><option value="2" selected>Alto</option><option value="3">Médio</option><option value="4">Baixo</option></select>
+      <label for="vtones" style="margin-top:12px">Tons</label>
+      <select id="vtones"><option value="1">1 — contorno sólido</option><option value="3">3 camadas</option><option value="5">5 camadas</option><option value="8">8 camadas</option></select>
+      <label style="margin-top:12px">Remover pontinhos menores que <b id="v-vspeck"></b><input type="range" id="vspeck" min="0" max="400" value="8" step="5"></label>
+      <p class="hint">Cada tom vira uma camada de caminhos editáveis. Com erosão ligada, 1 tom basta; sem erosão, use 3 a 8 para imitar o degradê. O grão do fundo fica só no PNG.</p>
+      <p class="hint"><b id="vinfo">—</b></p>
     </fieldset>
   </div>
 </div></main>
@@ -205,15 +218,92 @@ async function render(){
   for(let i=0;i<N;i++){
     let v=a[i]+nz[i]*g*(erode?1:a[i]*(1-a[i])*4+.15);
     if(erode){v=(v-lo)/(hi-lo);v=v<0?0:v>1?1:v;v=v*v*(3-2*v)}else v=v<0?0:v>1?1:v;
+    b[i]=v;
     const j=i*4;
     if(transp){d[j]=fg[0];d[j+1]=fg[1];d[j+2]=fg[2];d[j+3]=v*255}
     else{const n=nz[i]*bgG*38*(1-v);
       d[j]=bg[0]+(fg[0]-bg[0])*v+n;d[j+1]=bg[1]+(fg[1]-bg[1])*v+n;d[j+2]=bg[2]+(fg[2]-bg[2])*v+n;d[j+3]=255}}
   octx.putImageData(img,0,0);
+  last={v:b,W,H,fg:$("fg").value,bg:$("bg").value,transp,erode};
+  svgInfo();
 }
 
+/* ---------- Vetorização (marching squares) ---------- */
+let last=null;
+const CORN=[[0,0],[1,0],[1,1],[0,1]]; // tl tr br bl
+const EDGE={T:[.5,0,0,1],R:[1,.5,1,2],B:[.5,1,2,3],L:[0,.5,3,0]}; // ponto médio + cantos que o edge liga
+function pairsFor(c,center){
+  const t={1:["LB"],2:["BR"],3:["LR"],4:["TR"],6:["TB"],7:["LT"],8:["LT"],9:["TB"],11:["TR"],12:["LR"],13:["BR"],14:["LB"]};
+  if(c===5)return center?["LT","BR"]:["TR","LB"];
+  if(c===10)return center?["TR","LB"]:["LT","BR"];
+  return t[c]||[]}
+function orient(c,e1,e2){ // devolve [de,para] com o lado de dentro à esquerda (produto vetorial > 0)
+  const ins=k=>!!(c&[8,4,2,1][k]);
+  const p=EDGE[e1],q=EDGE[e2];
+  const shared=[p[2],p[3]].find(k=>k===q[2]||k===q[3]);const k=shared??0;
+  const [cx,cy]=CORN[k],dx=q[0]-p[0],dy=q[1]-p[1],cr=dx*(cy-p[1])-dy*(cx-p[0]);
+  return (cr>0)===ins(k)?[e1,e2]:[e2,e1]}
+const LUT=[];for(let c=0;c<16;c++)LUT[c]=[0,1].map(cen=>pairsFor(c,cen).map(s=>orient(c,s[0],s[1])));
+
+function downsample(v,W,H,st){
+  if(st===1)return{f:v,w:W,h:H};
+  const w=Math.ceil(W/st),h=Math.ceil(H/st),f=new Float32Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0,n=0;
+    for(let yy=y*st;yy<Math.min(H,y*st+st);yy++)for(let xx=x*st;xx<Math.min(W,x*st+st);xx++){s+=v[yy*W+xx];n++}
+    f[y*w+x]=s/n}
+  return{f,w,h}}
+
+function trace(f,w,h,t,scale,minArea,tol){
+  const pw=w+2,ph=h+2,g=new Float32Array(pw*ph);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)g[(y+1)*pw+x+1]=f[y*w+x];
+  const next=new Int32Array(pw*ph*2).fill(-1);
+  const eid=(x,y,e)=>e==="T"?2*(y*pw+x):e==="B"?2*((y+1)*pw+x):e==="L"?2*(y*pw+x)+1:2*(y*pw+x+1)+1;
+  for(let y=0;y<ph-1;y++)for(let x=0;x<pw-1;x++){
+    const a=g[y*pw+x],b=g[y*pw+x+1],c=g[(y+1)*pw+x+1],d=g[(y+1)*pw+x];
+    const k=(a>=t?8:0)|(b>=t?4:0)|(c>=t?2:0)|(d>=t?1:0);if(k===0||k===15)continue;
+    const segs=LUT[k][(a+b+c+d)/4>=t?1:0];
+    for(const[e1,e2]of segs)next[eid(x,y,e1)]=eid(x,y,e2)}
+  const pt=id=>{const v=id&1,p=id>>1,x=p%pw,y=(p/pw)|0;
+    const f0=g[p],f1=v?g[p+pw]:g[p+1],s=(t-f0)/(f1-f0||1e-6);
+    return v?[(x-1+.5)*scale,(y-1+s+.5)*scale]:[(x-1+s+.5)*scale,(y-1+.5)*scale]};
+  const loops=[];
+  for(let i=0;i<next.length;i++){if(next[i]<0)continue;
+    const pts=[];let e=i;
+    while(e>=0&&next[e]>=0){pts.push(pt(e));const n=next[e];next[e]=-1;e=n}
+    if(pts.length<3)continue;
+    let ar=0;for(let j=0;j<pts.length;j++){const p=pts[j],q=pts[(j+1)%pts.length];ar+=p[0]*q[1]-q[0]*p[1]}
+    if(Math.abs(ar/2)<minArea)continue;
+    loops.push(simplify(pts,tol))}
+  return loops}
+
+function rdp(p,tol){if(p.length<3)return p;
+  const keep=new Uint8Array(p.length);keep[0]=keep[p.length-1]=1;const st=[[0,p.length-1]];
+  while(st.length){const[s,e]=st.pop();let md=0,mi=-1;const[ax,ay]=p[s],[bx,by]=p[e],dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1e-9;
+    for(let i=s+1;i<e;i++){const d=Math.abs(dy*p[i][0]-dx*p[i][1]+bx*ay-by*ax)/L;if(d>md){md=d;mi=i}}
+    if(md>tol){keep[mi]=1;st.push([s,mi],[mi,e])}}
+  return p.filter((_,i)=>keep[i])}
+function simplify(p,tol){const m=p.length>>1;return rdp(p.slice(0,m+1),tol).slice(0,-1).concat(rdp(p.slice(m).concat([p[0]]),tol).slice(0,-1))}
+
+function buildSVG(){
+  if(!last)return null;
+  const{v,W,H,fg,bg,transp,erode}=last,st=+$("vdetail").value,tones=+$("vtones").value,minA=+$("vspeck").value;
+  const{f,w,h}=downsample(v,W,H,st);
+  const lv=tones===1?[.5]:Array.from({length:tones},(_,i)=>(i+1)/(tones+1));
+  let body="",count=0;
+  lv.forEach((t,i)=>{const loops=trace(f,w,h,t,st,minA,.35*st);count+=loops.length;if(!loops.length)return;
+    const d=loops.map(l=>"M"+l.map(p=>p[0].toFixed(1)+" "+p[1].toFixed(1)).join("L")+"Z").join("");
+    const op=tones===1?1:1/(tones-i);
+    body+=`<path id="tom-${i+1}" fill="${fg}"${op<1?` fill-opacity="${op.toFixed(3)}"`:""} fill-rule="evenodd" d="${d}"/>\n`});
+  const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n`+
+    (transp?"":`<rect id="fundo" width="${W}" height="${H}" fill="${bg}"/>\n`)+`<g id="texto">\n${body}</g>\n</svg>`;
+  return{svg,count}}
+
+let infoT=0;
+function svgInfo(){clearTimeout(infoT);infoT=setTimeout(()=>{const r=buildSVG();if(!r)return;
+  $("vinfo").textContent=`${r.count.toLocaleString("pt-BR")} formas · ${(r.svg.length/1024).toFixed(0)} KB`},250)}
+
 const fmt={blur:v=>v+" px",drag:v=>v+" px",grain:v=>v+"%",gsize:v=>v+"×",bggrain:v=>v+"%",jitter:v=>v+" px",
-  thr:v=>v+"%",soft:v=>v+"%",track:v=>v,lead:v=>(v/100).toFixed(2)};
+  thr:v=>v+"%",soft:v=>v+"%",track:v=>v,lead:v=>(v/100).toFixed(2),vspeck:v=>v+" px²"};
 function updateLabels(){for(const k in fmt)$("v-"+k).textContent=fmt[k]($(k).value)}
 
 document.querySelectorAll("input,select,textarea").forEach(el=>el.addEventListener("input",schedule));
@@ -221,14 +311,23 @@ $("seed").addEventListener("click",()=>{seed=Math.floor(Math.random()*1e9);sched
 
 const status=m=>{$("status").textContent=m};
 const fname=()=>"fora-de-foco-"+(($("txt").value||"texto").toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,30))+".png";
-$("dl").addEventListener("click",()=>{out.toBlob(bl=>{const u=URL.createObjectURL(bl),a=document.createElement("a");
-  a.href=u;a.download=fname();document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
-  status(`PNG ${out.width}×${out.height} gerado.`+(window.self!==window.top?" Se nada baixou, use Copiar imagem (prévias embutidas bloqueiam downloads).":""))},"image/png")});
+// Download: usa o recurso do Claude quando a página roda dentro dele; no GitHub Pages, link normal
+let dlCap=null;
+if(window.claude&&window.claude.use)window.claude.use("downloads").then(d=>{dlCap=d;if(d)status("")}).catch(()=>{});
+async function saveFile(name,blob){
+  if(dlCap){try{await dlCap.save({filename:name,data:blob});return true}
+    catch(e){status(e&&e.code==="declined"?"Download cancelado.":"Não deu para salvar aqui.");return false}}
+  const u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return true}
+$("dl").addEventListener("click",()=>{out.toBlob(async bl=>{if(await saveFile(fname(),bl))status(`PNG ${out.width}×${out.height} gerado.`)},"image/png")});
+$("dlsvg").addEventListener("click",async()=>{status("Vetorizando…");await new Promise(r=>setTimeout(r,30));
+  const r=buildSVG();if(!r){status("Nada para exportar ainda.");return}
+  if(await saveFile(fname().replace(/\.png$/,".svg"),new Blob([r.svg],{type:"image/svg+xml"})))
+    status(`SVG com ${r.count.toLocaleString("pt-BR")} formas gerado.`)});
 $("copy").addEventListener("click",async()=>{try{const bl=await new Promise(r=>out.toBlob(r,"image/png"));
   await navigator.clipboard.write([new ClipboardItem({"image/png":bl})]);status("Imagem copiada. Cole no Photoshop, Figma, Obsidian…")}
   catch(e){status("O navegador não deixou copiar aqui. Tente Baixar PNG.")}});
 
-if(window.self!==window.top)status("Na prévia do Claude o download pode ser bloqueado. No GitHub Pages funciona normal.");
 document.fonts.ready.then(schedule);schedule();
 }
 </script>
