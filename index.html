@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fora de Foco</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600&family=Archivo+Black&family=Bebas+Neue&family=Oswald:wght@700&family=Playfair+Display:wght@900&family=Rubik+Mono+One&family=Special+Elite&family=UnifrakturMaguntia&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: sombria, tátil, de oficina gráfica — poucas palavras, ferramenta à frente
+   IDEA: uma fotocopiadora velha / ampliador de laboratório que borra e granula a letra
+   PICTURE: a própria prévia do texto gerado, grande, no topo
+   COLOUR and TYPE: preto quente + vermelho de pôster + osso; Anton nos títulos, Archivo no corpo
+   LAYOUT: título curto, prévia em faixa cheia, controles em colunas abaixo, empilha no celular */
+:root{color-scheme:light dark;
+--bg:light-dark(#ece6dc,#0e0b0b);--panel:light-dark(#e2dbcf,#181313);--ink:light-dark(#1a1414,#efe6dc);
+--muted:light-dark(#5f5450,#a8988f);--red:light-dark(#b8231a,#e0392c);--line:light-dark(#cbc1b3,#2c2321)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Archivo,system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(20px,3vw,40px) max(4vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+header.band{padding-bottom:12px}
+h1{font:400 clamp(34px,5vw,52px)/1.05 Anton,Impact,sans-serif;margin:0;letter-spacing:.01em}
+h1 span{color:var(--red)}
+header p{margin:6px 0 0;color:var(--muted);max-width:62ch}
+.stage{background:#000;border-radius:6px;overflow:hidden;display:grid;place-items:center;min-height:260px;
+background-image:linear-gradient(45deg,#1a1a1a 25%,transparent 25%,transparent 75%,#1a1a1a 75%),linear-gradient(45deg,#1a1a1a 25%,#111 25%,#111 75%,#1a1a1a 75%);
+background-size:20px 20px;background-position:0 0,10px 10px}
+canvas#out{display:block;max-width:100%;max-height:72vh;width:auto;height:auto}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
+.bar .note{color:var(--muted);font-size:14px;flex:1 1 220px}
+button{font:600 15px Archivo,sans-serif;min-height:44px;padding:0 18px;border-radius:4px;border:1px solid var(--line);
+background:var(--panel);color:var(--ink);cursor:pointer}
+button.main{background:var(--red);border-color:var(--red);color:#fff}
+button:hover{border-color:var(--red)}
+:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.presets button{font-weight:400}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:22px}
+fieldset{border:1px solid var(--line);border-radius:6px;padding:14px 16px 6px;margin:0;background:var(--panel)}
+legend{font:400 20px Anton,sans-serif;padding:0 6px;letter-spacing:.02em}
+label{display:block;margin-bottom:12px;font-size:14px;color:var(--muted)}
+label b{float:right;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+textarea,select{width:100%;font:16px Archivo,sans-serif;padding:10px;border-radius:4px;border:1px solid var(--line);
+background:var(--bg);color:var(--ink);margin-top:4px}
+textarea{min-height:92px;resize:vertical;text-transform:none}
+input[type=range]{width:100%;accent-color:var(--red);height:28px;margin:2px 0 0}
+.row{display:flex;gap:12px;align-items:center;margin-bottom:12px;color:var(--muted);font-size:14px}
+.row input[type=color]{width:44px;height:44px;border:1px solid var(--line);border-radius:4px;padding:2px;background:var(--bg)}
+.check{display:flex;gap:8px;align-items:center;min-height:32px}
+.check input{width:20px;height:20px;accent-color:var(--red)}
+footer{color:var(--muted);font-size:14px}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.grid{grid-template-columns:minmax(0,1fr)}canvas#out{max-height:55vh}}
+</style>
+</head>
+<body>
+<header class="band"><div class="wrap">
+  <h1>Fora de <span>foco</span></h1>
+  <p>Escreva, desfoque e granule. A letra se dissolve como numa fotocópia gasta. Exporta em PNG, com fundo ou transparente.</p>
+</div></header>
+
+<main class="band" style="padding-top:0"><div class="wrap">
+  <div class="stage"><canvas id="out" width="1800" height="600" aria-label="Prévia do texto gerado"></canvas></div>
+  <div class="bar">
+    <button class="main" id="dl">Baixar PNG</button>
+    <button id="copy">Copiar imagem</button>
+    <button id="seed">Novo grão</button>
+    <span class="note" id="status"></span>
+  </div>
+
+  <div class="presets" id="presets"></div>
+
+  <div class="grid">
+    <fieldset><legend>Texto</legend>
+      <label for="txt">Texto (Enter quebra a linha)</label>
+      <textarea id="txt">OVERTHINKING</textarea>
+      <label for="font" style="margin-top:12px">Fonte</label>
+      <select id="font"></select>
+      <label style="margin-top:12px">Espaçamento <b id="v-track"></b><input type="range" id="track" min="-10" max="40" value="0"></label>
+      <label>Entrelinha <b id="v-lead"></b><input type="range" id="lead" min="70" max="160" value="92"></label>
+      <div class="check"><input type="checkbox" id="upper" checked><label for="upper" style="margin:0">Caixa alta</label></div>
+      <label for="ratio" style="margin-top:8px">Formato</label>
+      <select id="ratio">
+        <option value="fit">Ajustado ao texto</option><option value="1:1">Quadrado 1:1</option>
+        <option value="2:3">Pôster 2:3</option><option value="16:9">Paisagem 16:9</option><option value="9:16">Story 9:16</option>
+      </select>
+    </fieldset>
+
+    <fieldset><legend>Foco e grão</legend>
+      <label>Desfoque <b id="v-blur"></b><input type="range" id="blur" min="0" max="40" value="6" step="0.5"></label>
+      <label>Arrasto horizontal <b id="v-drag"></b><input type="range" id="drag" min="0" max="60" value="0"></label>
+      <label>Grão <b id="v-grain"></b><input type="range" id="grain" min="0" max="100" value="45"></label>
+      <label>Tamanho do grão <b id="v-gsize"></b><input type="range" id="gsize" min="1" max="8" value="2" step="0.5"></label>
+      <label>Grão no fundo <b id="v-bggrain"></b><input type="range" id="bggrain" min="0" max="100" value="25"></label>
+      <label>Tremor <b id="v-jitter"></b><input type="range" id="jitter" min="0" max="80" value="0"></label>
+    </fieldset>
+
+    <fieldset><legend>Tinta</legend>
+      <div class="check"><input type="checkbox" id="erode" checked><label for="erode" style="margin:0">Erosão (corta o borrão em bordas roídas)</label></div>
+      <label style="margin-top:10px">Limiar <b id="v-thr"></b><input type="range" id="thr" min="5" max="95" value="50"></label>
+      <label>Suavidade da borda <b id="v-soft"></b><input type="range" id="soft" min="1" max="50" value="12"></label>
+      <div class="row"><input type="color" id="fg" value="#f2ece4" aria-label="Cor do texto">Texto
+        <input type="color" id="bg" value="#1a0c0b" aria-label="Cor do fundo">Fundo</div>
+      <div class="check"><input type="checkbox" id="transp"><label for="transp" style="margin:0">Fundo transparente</label></div>
+    </fieldset>
+  </div>
+</div></main>
+
+<footer class="band"><div class="wrap">Tudo é processado no seu navegador. Dica: erosão ligada + grão alto + desfoque médio dá o efeito de letra "comida" de pôster xerocado.</div></footer>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+const FONTS=[["Anton","400"],["Bebas Neue","400"],["Oswald","700"],["Archivo Black","400"],["Rubik Mono One","400"],
+  ["Playfair Display","900"],["UnifrakturMaguntia","400"],["Special Elite","400"],["Space Mono","700"],["Impact","400"],["Georgia","700"]];
+$("font").innerHTML=FONTS.map((f,i)=>`<option value="${i}">${f[0]}</option>`).join("");
+
+const PRESETS=[
+  {n:"Pôster vermelho",blur:6,drag:0,grain:45,gsize:2,bggrain:25,jitter:0,erode:true,thr:50,soft:12,fg:"#f2ece4",bg:"#1a0c0b"},
+  {n:"Xerox gasto",blur:3,drag:0,grain:70,gsize:1.5,bggrain:15,jitter:0,erode:true,thr:55,soft:6,fg:"#111111",bg:"#e9e4da"},
+  {n:"Sonho",blur:18,drag:0,grain:30,gsize:2.5,bggrain:20,jitter:0,erode:false,thr:50,soft:20,fg:"#f4d9d0",bg:"#2a1320"},
+  {n:"Velocidade",blur:2,drag:45,grain:40,gsize:2,bggrain:20,jitter:0,erode:true,thr:45,soft:14,fg:"#ffffff",bg:"#0b0b0f"},
+  {n:"Sinal ruim",blur:4,drag:8,grain:55,gsize:3,bggrain:35,jitter:40,erode:true,thr:50,soft:10,fg:"#e0392c",bg:"#0c0a0a"},
+  {n:"Tinta azul",blur:5,drag:0,grain:60,gsize:1,bggrain:10,jitter:0,erode:true,thr:60,soft:8,fg:"#1d2f8f",bg:"#f1ede4"}
+];
+$("presets").innerHTML=PRESETS.map((p,i)=>`<button data-p="${i}">${p.n}</button>`).join("");
+$("presets").addEventListener("click",e=>{const i=e.target.dataset.p;if(i==null)return;const p=PRESETS[i];
+  for(const k in p){if(k==="n")continue;const el=$(k);if(el.type==="checkbox")el.checked=p[k];else el.value=p[k]}
+  $("transp").checked=false;schedule()});
+
+const out=$("out"),octx=out.getContext("2d");
+const mask=document.createElement("canvas"),mctx=mask.getContext("2d",{willReadFrequently:true});
+let seed=1337,noiseKey="",noise=null;
+
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function hex(h){const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255]}
+
+function getNoise(W,H,g){
+  const key=W+"x"+H+"@"+g+"#"+seed;if(key===noiseKey)return noise;
+  const w=Math.max(1,Math.ceil(W/g)),h=Math.max(1,Math.ceil(H/g)),r=rng(seed);
+  const small=document.createElement("canvas");small.width=w;small.height=h;
+  const sc=small.getContext("2d"),id=sc.createImageData(w,h);
+  for(let i=0;i<w*h;i++){const v=r()*255;id.data[i*4]=id.data[i*4+1]=id.data[i*4+2]=v;id.data[i*4+3]=255}
+  sc.putImageData(id,0,0);
+  const big=document.createElement("canvas");big.width=W;big.height=H;
+  const bc=big.getContext("2d",{willReadFrequently:true});bc.imageSmoothingEnabled=g>1.2;bc.drawImage(small,0,0,W,H);
+  const d=bc.getImageData(0,0,W,H).data;noise=new Float32Array(W*H);
+  for(let i=0;i<W*H;i++)noise[i]=(d[i*4]/255-.5)*2;
+  noiseKey=key;return noise}
+
+function blurH(s,d,w,h,r){if(r<1){d.set(s);return}const k=1/(2*r+1);
+  for(let y=0;y<h;y++){const o=y*w;let t=0;for(let i=-r;i<=r;i++)t+=s[o+Math.min(w-1,Math.max(0,i))];
+    for(let x=0;x<w;x++){d[o+x]=t*k;t+=s[o+Math.min(w-1,x+r+1)]-s[o+Math.max(0,x-r)]}}}
+function blurV(s,d,w,h,r){if(r<1){d.set(s);return}const k=1/(2*r+1);
+  for(let x=0;x<w;x++){let t=0;for(let i=-r;i<=r;i++)t+=s[Math.min(h-1,Math.max(0,i))*w+x];
+    for(let y=0;y<h;y++){d[y*w+x]=t*k;t+=s[Math.min(h-1,y+r+1)*w+x]-s[Math.max(0,y-r)*w+x]}}}
+const rad=s=>Math.round((Math.sqrt(4*s*s+1)-1)/2);
+
+function layout(lines,fam,wt,track,lead,ratio,padBase){
+  mctx.font=`${wt} 100px "${fam}"`;
+  const widths=lines.map(l=>[...l].reduce((a,c)=>a+mctx.measureText(c).width,0)+track*Math.max(0,[...l].length-1));
+  const maxW=Math.max(1,...widths),blockH=100*(1+(lines.length-1)*lead);
+  let W,H,fs;
+  if(ratio==="fit"){W=1800;const pad=padBase;fs=100*(W-2*pad)/maxW;H=Math.round(blockH*fs/100+2*pad)}
+  else{const[a,b]=ratio.split(":").map(Number);W=a>=b?1920:Math.round(1920*a/b);H=Math.round(W*b/a);
+    const pad=Math.max(padBase,W*.08);fs=Math.min(100*(W-2*pad)/maxW,100*(H-2*pad)/blockH)}
+  return{W,H:Math.max(H,200),fs,widths}}
+
+let pending=false;
+function schedule(){updateLabels();if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;render()})}
+
+async function render(){
+  const f=FONTS[+$("font").value],fam=f[0],wt=f[1];
+  try{await document.fonts.load(`${wt} 100px "${fam}"`)}catch(e){}
+  let text=$("txt").value||" ";if($("upper").checked)text=text.toUpperCase();
+  const lines=text.split("\n"),track=+$("track").value,lead=+$("lead").value/100;
+  const blur=+$("blur").value,drag=+$("drag").value,jit=+$("jitter").value;
+  const padBase=Math.max(90,blur*4+drag*3+jit+40);
+  const L=layout(lines,fam,wt,track,lead,$("ratio").value,padBase);
+  const W=L.W,H=L.H,fs=L.fs,k=fs/100;
+  mask.width=out.width=W;mask.height=out.height=H;
+  mctx.fillStyle="#000";mctx.fillRect(0,0,W,H);mctx.fillStyle="#fff";
+  mctx.font=`${wt} ${fs}px "${fam}"`;mctx.textBaseline="middle";
+  const lh=fs*lead,top=H/2-(lines.length-1)*lh/2;
+  lines.forEach((l,i)=>{let x=(W-L.widths[i]*k)/2;const y=top+i*lh;
+    for(const c of l){mctx.fillText(c,x,y);x+=mctx.measureText(c).width+track*k}});
+  const md=mctx.getImageData(0,0,W,H).data,N=W*H;
+  let a=new Float32Array(N),b=new Float32Array(N);
+  for(let i=0;i<N;i++)a[i]=md[i*4]/255;
+  if(jit>0){const r=rng(seed+7);let y=0;
+    while(y<H){const band=4+Math.floor(r()*40),off=Math.round((r()-.5)*2*jit*(r()<.6?.25:1));
+      for(let yy=y;yy<Math.min(H,y+band);yy++){const o=yy*W;for(let x=0;x<W;x++){const sx=x-off;b[o+x]=sx>=0&&sx<W?a[o+sx]:0}}
+      y+=band}
+    [a,b]=[b,a]}
+  const rx=rad(blur+drag),ry=rad(blur);
+  for(let p=0;p<3;p++){blurH(a,b,W,H,rx);blurV(b,a,W,H,ry)}
+  const nz=getNoise(W,H,+$("gsize").value);
+  const g=+$("grain").value/100*.9,bgG=+$("bggrain").value/100,erode=$("erode").checked;
+  const t=+$("thr").value/100,s=+$("soft").value/100*.5,lo=t-s,hi=t+s;
+  const fg=hex($("fg").value),bg=hex($("bg").value),transp=$("transp").checked;
+  const img=octx.createImageData(W,H),d=img.data;
+  for(let i=0;i<N;i++){
+    let v=a[i]+nz[i]*g*(erode?1:a[i]*(1-a[i])*4+.15);
+    if(erode){v=(v-lo)/(hi-lo);v=v<0?0:v>1?1:v;v=v*v*(3-2*v)}else v=v<0?0:v>1?1:v;
+    const j=i*4;
+    if(transp){d[j]=fg[0];d[j+1]=fg[1];d[j+2]=fg[2];d[j+3]=v*255}
+    else{const n=nz[i]*bgG*38*(1-v);
+      d[j]=bg[0]+(fg[0]-bg[0])*v+n;d[j+1]=bg[1]+(fg[1]-bg[1])*v+n;d[j+2]=bg[2]+(fg[2]-bg[2])*v+n;d[j+3]=255}}
+  octx.putImageData(img,0,0);
+}
+
+const fmt={blur:v=>v+" px",drag:v=>v+" px",grain:v=>v+"%",gsize:v=>v+"×",bggrain:v=>v+"%",jitter:v=>v+" px",
+  thr:v=>v+"%",soft:v=>v+"%",track:v=>v,lead:v=>(v/100).toFixed(2)};
+function updateLabels(){for(const k in fmt)$("v-"+k).textContent=fmt[k]($(k).value)}
+
+document.querySelectorAll("input,select,textarea").forEach(el=>el.addEventListener("input",schedule));
+$("seed").addEventListener("click",()=>{seed=Math.floor(Math.random()*1e9);schedule()});
+
+const status=m=>{$("status").textContent=m};
+const fname=()=>"fora-de-foco-"+(($("txt").value||"texto").toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,30))+".png";
+$("dl").addEventListener("click",()=>{out.toBlob(bl=>{const u=URL.createObjectURL(bl),a=document.createElement("a");
+  a.href=u;a.download=fname();document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
+  status(`PNG ${out.width}×${out.height} gerado.`+(window.self!==window.top?" Se nada baixou, use Copiar imagem (prévias embutidas bloqueiam downloads).":""))},"image/png")});
+$("copy").addEventListener("click",async()=>{try{const bl=await new Promise(r=>out.toBlob(r,"image/png"));
+  await navigator.clipboard.write([new ClipboardItem({"image/png":bl})]);status("Imagem copiada. Cole no Photoshop, Figma, Obsidian…")}
+  catch(e){status("O navegador não deixou copiar aqui. Tente Baixar PNG.")}});
+
+if(window.self!==window.top)status("Na prévia do Claude o download pode ser bloqueado. No GitHub Pages funciona normal.");
+document.fonts.ready.then(schedule);schedule();
+}
+</script>
+</body>
+</html>
